@@ -21,7 +21,7 @@ def send_message(prompt, user_messages, time_limit_rate=RATE_LIMIT):
     print(f"""
 {prompt}
 ############
-{user_message}
+{user_messages}
 ------------
 {response_text}
 """)
