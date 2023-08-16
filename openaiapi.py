@@ -7,12 +7,9 @@ MODEL = 'gpt-3.5-turbo'
 
 openai.api_key = os.getenv("OPENAI_API_KEY")
 
-def send_message(prompt, user_message, time_limit_rate=RATE_LIMIT):
+def send_message(prompt, user_messages, time_limit_rate=RATE_LIMIT):
     # Create a context with prompt and user message
-    context = [
-        {'role': 'system', 'content': prompt},
-        {'role': 'user', 'content': user_message}
-    ]
+    context = [{'role': 'system', 'content': prompt}] + [{'role':'user','content':message} for message in user_messages]
     
     # Send the context to the ChatCompletion API
     response = openai.ChatCompletion.create(model=MODEL, messages=context)
