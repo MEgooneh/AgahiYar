@@ -6,3 +6,6 @@ def phone_format(phone):
     if phone[:2] == '98':
         return phone[2:]
     return phone
+
+def url_to_postid(url):
+    return url.split('/')[-1]
