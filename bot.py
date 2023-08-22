@@ -2,8 +2,7 @@ import os
 import database_handle as db
 from services import divar
 import logger, drivers, formatting
-#TOKEN = os.getenv("TG_KEY")
-TOKEN = "6360256999:AAFVybat-_1m8zDWf_jrWg3giIhPFeH8Hpg"
+TOKEN = os.getenv("TG_KEY")
 
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
