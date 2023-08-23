@@ -4,3 +4,4 @@ selenium
 python-telegram-bot>=20
 asyncio
 sqlalchemy
+aiosqlite

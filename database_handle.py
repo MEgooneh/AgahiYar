@@ -1,21 +1,17 @@
 import asyncio
-from sqlalchemy import create_async_engine, Column, Integer, String, Boolean
+from sqlalchemy import  Column, Integer, String, Boolean
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, scoped_session, declarative_base
 
 import formatting, logger
 
-DATABASE_URL = 'sqlite+aiosqlite:///adconnect.db'  # Replace with your database URL
-async_engine = create_async_engine(DATABASE_URL, echo=True, future=True, strategy="asyncio")
+DATABASE_URL = 'sqlite+aiosqlite:///adconnect.db'   # Replace with your database URL
+async_engine = create_async_engine(DATABASE_URL, echo=True)
+
+AsyncSessionLocal = sessionmaker(async_engine)
 
 # Use async_session to create an asynchronous session factory
-AsyncSessionLocal = sessionmaker(
-    bind=async_engine,
-    expire_on_commit=False,
-    class_=scoped_session,
-    expire_on_commit=False,
-    future=True,  # Use the future mode for asyncio support
-)
 
 Base = declarative_base()
 
@@ -38,8 +34,6 @@ class Post(Base):
     chat_id = Column(Integer) # Needed
     description = Column(String)
 
-# # Create the tables
-Base.metadata.create_all(engine)
 
 
 async def update():
