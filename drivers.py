@@ -1,10 +1,15 @@
-from selenium import webdriver
 import asyncio
+
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from asyncselenium.webdriver.remote.async_webdriver import AsyncWebdriver
+from asyncselenium.webdriver.support.async_wait import AsyncWebDriverWait
+from asyncselenium.webdriver.support import async_expected_conditions as ec
 #from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.chrome.options import Options
 import os
 async def prepare_chrome_driver(user_id):
-    chrome_options = Options()
+    chrome_options = webdriver.ChromeOptions()
     #Most Minimized version
     chrome_options.add_argument('--disable-extensions')
     chrome_options.add_argument('--headless')  
@@ -19,8 +24,7 @@ async def prepare_chrome_driver(user_id):
         os.makedirs(profile_directory)
     chrome_options.add_argument(f"user-data-dir={profile_directory}")
     chrome_options.binary_location = 'chrome-linux64/chrome'
-    loop = asyncio.get_event_loop()
-    driver = await loop.run_in_executor(None, lambda: webdriver.Chrome(options=chrome_options))
+    driver = await AsyncWebdriver(options=chrome_options)
     return driver
 
 # def prepare_firefox_driver(user_id):

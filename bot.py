@@ -1,7 +1,7 @@
 import os
 import database_handle as db
 from services import divar
-import drivers, formatting, logger, shutil, asyncio
+import drivers, formatting, logger, shutil, time
 
 #TODO : for efficiency transfer one-used packages in just that function 
 
@@ -9,7 +9,7 @@ TOKEN = os.getenv("TG_KEY")
 
 ######## states:
 
-PHONE, CODE, LINK, SURE, DESCRIPTION, LINK_DELETE = range(6)
+PHONE, CODE, LINK, SURE, DESCRIPTION, LINK_DELETE, CHARGE_SBT = range(7)
 
 
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
@@ -24,14 +24,14 @@ reply_markup_cancel = ReplyKeyboardMarkup(
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     chat_id = int(update.message.chat_id)
-    user = await db.get_user(chat_id)
+    user = db.get_user(chat_id)
     if user:
         await update.message.reply_text(f"""
 Welcome back!
 {"You are logged in!" if user.logged_in else "You didn't logged in yet!"} 
                                   """)    
     else:
-        await db.add_user(chat_id)
+        db.add_user(chat_id)
         await update.message.reply_text(f"""
 Welcome new user!
 you can login with /login .
@@ -50,7 +50,7 @@ async def helpp(update: Update, context:ContextTypes.DEFAULT_TYPE):
 
 async def addPost(update: Update, context:ContextTypes.DEFAULT_TYPE):
     chat_id = int(update.message.chat_id)
-    user = await db.get_user(chat_id)
+    user = db.get_user(chat_id)
     if user.logged_in == False:
         await update.message.reply_text("You must login first!")
         return ConversationHandler.END
@@ -71,14 +71,14 @@ async def recieve_posturl(update: Update, context:ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Please send a valid url.", reply_markup = reply_markup_cancel)
         return LINK
     global post
-    post = await db.Post()
+    post = db.Post()
     post.chat_id, post.url, post.post_id = int(update.message.chat_id), url, formatting.url_to_postid(url)
     await update.message.reply_text("Done! now tell the desciption and the tutorial for the ai to respond!", reply_markup = reply_markup_cancel)
     return DESCRIPTION
 
 async def recieve_description(update: Update, context:ContextTypes.DEFAULT_TYPE):
     post.description = update.message.text
-    await db.add_post(post)
+    db.add_post(post)
     await update.message.reply_text("Done! now you will be announced if someone ask you a Q in divar chat!")
     return ConversationHandler.END
 
@@ -90,7 +90,7 @@ async def cancel_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 ################## Delete post
 
 async def deletePost(update: Update, context:ContextTypes.DEFAULT_TYPE):
-    user = await db.get_user(int(update.message.chat_id))
+    user = db.get_user(int(update.message.chat_id))
     if user.logged_in == False:
         await update.message.reply_text("You must login first!")
         return ConversationHandler.END    
@@ -103,11 +103,11 @@ async def recieve_posturl_delete(update: Update, context:ContextTypes.DEFAULT_TY
     if formatting.is_url(url) == False:
         await update.message.reply_text("Please send a valid url.", reply_markup = reply_markup_cancel)
         return LINK_DELETE
-    user = await db.get_user(int(update.message.chat_id))
+    user = db.get_user(int(update.message.chat_id))
     post_id = formatting.url_to_postid(url)
-    post = await db.get_post(post_id)
+    post = db.get_post(post_id)
     if post :
-        await db.delete_post(post) 
+        db.delete_post(post) 
         await update.message.reply_text(f"Done! now you now have {user.posts_charged-user.posts_number + 1} chargs to post.")
     else:
         await update.message.reply_text("you have no such post!")
@@ -120,7 +120,7 @@ async def recieve_posturl_delete(update: Update, context:ContextTypes.DEFAULT_TY
 
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     chat_id = int(update.message.chat_id)
-    if await db.get_user(chat_id).logged_in == False:
+    if db.get_user(chat_id).logged_in == False:
         await update.message.reply_text("Hi! Please provide your phone number.", reply_markup = reply_markup_cancel)   
         return PHONE
 
@@ -135,15 +135,15 @@ async def receive_phone_number(update: Update, context: ContextTypes.DEFAULT_TYP
     chat_id = int(update.message.chat_id)
     phone = formatting.phone_format(update.message.text)
     await update.message.reply_text("Please Wait... we are trying to login to divar.", reply_markup = reply_markup_cancel)
-    user = await db.get_user(chat_id)
+    user = db.get_user(chat_id)
     user.phone = phone
-    logger.log("INFO", "await db", f"{chat_id} set the phone number to {phone}.") 
-    await db.update()
+    logger.log("INFO", "db", f"{chat_id} set the phone number to {phone}.") 
+    db.update()
     global temp_driver
     temp_driver = await drivers.prepare_chrome_driver(chat_id)
     attemp = await divar.login_attemp(temp_driver, phone)
     if attemp:
-        await asyncio.sleep(5)
+        await time.sleep(5)
         await update.message.reply_text("Done! Please enter the code you received.", reply_markup = reply_markup_cancel)
         return CODE
     else:
@@ -155,8 +155,8 @@ async def receive_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     completed_login = await divar.login_complete(temp_driver, update.message.text)
     if completed_login :  # Replace with your validation logic
         await update.message.reply_text("Code validated! You're all set.")
-        await asyncio.sleep(5)
-        await db.user_logged_in(chat_id)
+        await time.sleep(5)
+        db.user_logged_in(chat_id)
         temp_driver.close()
         return ConversationHandler.END
     else:
@@ -166,7 +166,7 @@ async def receive_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 async def cancel_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("Conversation cancelled.")
     if temp_driver:
-        await db.user_logged_out(int(update.message.chat_id))
+        db.user_logged_out(int(update.message.chat_id))
         temp_driver.close()
     return ConversationHandler.END
 
@@ -174,7 +174,7 @@ async def cancel_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 ################## logout
 
 async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int : 
-    user = await db.get_user(int(update.message.chat_id))
+    user = db.get_user(int(update.message.chat_id))
     if user.logged_in == False:
         await update.message.reply_text("you are already loggedout.")
         return ConversationHandler.END    
@@ -183,13 +183,39 @@ async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int :
 
 async def logout_sure(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int : 
     phone = formatting.phone_format(update.message.text)
-    user = await db.get_user(int(update.message.chat_id))
+    user = db.get_user(int(update.message.chat_id))
     if user.phone != phone :
         await update.message.reply_text("this is not the phone that you have logged in !")
         return ConversationHandler.END
-    await db.user_logged_out(int(update.message.chat_id))
+    db.user_logged_out(int(update.message.chat_id))
     await shutil.rmtree(f'profiles/{user.chat_id}')
     await update.message.reply_text("you are logged out. and your folder deleted!")
+    return ConversationHandler.END
+
+########################## charge
+
+async def chargeStart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int : 
+    user = db.get_user(int(update.message.chat_id))    
+    await update.message.reply_text("please send the serial number you have:")
+    return CHARGE_SBT
+
+async def recieve_serial(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int : 
+    serial = update.message.text
+    user = db.get_user(int(update.message.chat_id))
+    verified_serial = db.get_serial(serial)
+    if verified_serial == None or verified_serial.remained == 0 :
+        await update.message.reply_text("Wrong serial or you can't use it anymore!")
+        return ConversationHandler.END
+
+    if str(user.chat_id) in verified_serial.users : 
+        await update.message.reply_text("You have uses this code before!")
+        return ConversationHandler.END
+
+    user.posts_charge += verified_serial.charge
+    verified_serial.remained -= 1
+    verified_serial.users += ('-' + str(user.chat_id))
+    db.update()
+    await update.message.reply_text(f"Your charge increased {verified_serial.charge}. now you have {user.posts_charge} !")
     return ConversationHandler.END
 
 
@@ -236,12 +262,20 @@ if __name__ == '__main__':
         },
         fallbacks=[CommandHandler('cancel', cancel_post)]
     )    
+    charge_handler = ConversationHandler(
+        entry_points=[CommandHandler('charge', chargeStart)],
+        states={
+            CHARGE_SBT: [MessageHandler(filters.TEXT, recieve_serial)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel_post)]
+    )       
 
 
     
     application.add_handler(login_handler)
     application.add_handler(post_handler)
     application.add_handler(deletepost_handler)
+    application.add_handler(charge_handler)
     application.add_handler(logout_handler)
 
     application.run_polling()

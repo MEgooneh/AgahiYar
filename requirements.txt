@@ -1,7 +1,8 @@
 requests
 openai
 selenium
+asyncio-w3cwebdriver
+w3c-chrome-driver
 python-telegram-bot>=20
 asyncio
 sqlalchemy
-aiosqlite
