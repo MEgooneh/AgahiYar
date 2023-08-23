@@ -1,19 +1,13 @@
-# Use the official Selenium image as the base
-FROM selenium/standalone-firefox:latest
-
-# Set a working directory
-WORKDIR /app
-
-# Install Python and pip (optional, if not already included in the Selenium image)
-RUN sudo apt-get update && \
-    sudo apt-get install -y python3 python3-pip
-
-# Copy your Selenium Python script to the container
-COPY / .
+FROM ubuntu:latest
 
 
-# Install necessary Python packages
+RUN apt-get update && apt-get install -y python3 python3-pip
+
+
+
+COPY . /
 RUN pip3 install -r requirements.txt
 
-# Command to run your script
+ENV TG_KEY="6360256999:AAFVybat-_1m8zDWf_jrWg3giIhPFeH8Hpg"
+
 CMD ["python3", "bot.py"]

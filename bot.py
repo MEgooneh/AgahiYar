@@ -1,109 +1,251 @@
 import os
 import database_handle as db
 from services import divar
-import logger, drivers, formatting
+import drivers, formatting, logger, shutil, asyncio
+
+#TODO : for efficiency transfer one-used packages in just that function 
+
 TOKEN = os.getenv("TG_KEY")
 
+######## states:
 
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.ext import  Updater, CommandHandler, MessageHandler, Filters, ConversationHandler, CallbackContext
+PHONE, CODE, LINK, SURE, DESCRIPTION, LINK_DELETE = range(6)
 
 
-def start(update: Update, context: CallbackContext) -> int:
+from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
+from telegram.ext import  Updater,filters, CommandHandler, MessageHandler, ConversationHandler, ApplicationBuilder, ContextTypes
+
+reply_markup_cancel = ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton("/cancel")],
+        ],
+        resize_keyboard=True
+    )
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     chat_id = int(update.message.chat_id)
-    user = db.get_user(chat_id)
+    user = await db.get_user(chat_id)
     if user:
-        update.message.reply_text(f"""
+        await update.message.reply_text(f"""
 Welcome back!
 {"You are logged in!" if user.logged_in else "You didn't logged in yet!"} 
                                   """)    
     else:
-        update.message.reply_text(f"""
+        await db.add_user(chat_id)
+        await update.message.reply_text(f"""
 Welcome new user!
 you can login with /login .
                                   """)
 
 
+async def helpp(update: Update, context:ContextTypes.DEFAULT_TYPE):
+    help_message = """
 
 
+"""
+    await update.message.reply_text(help_message)    
+    return
 
-PHONE, CODE = range(2)
+################## Add post
 
-
-def login(update: Update, context: CallbackContext) -> int:
+async def addPost(update: Update, context:ContextTypes.DEFAULT_TYPE):
     chat_id = int(update.message.chat_id)
-    if db.get_user(chat_id) == None:
-        update.message.reply_text("Hi! Please provide your phone number.")    
+    user = await db.get_user(chat_id)
+    if user.logged_in == False:
+        await update.message.reply_text("You must login first!")
+        return ConversationHandler.END
+    remained = user.posts_charged - user.posts_number
+    if remained == 0 : 
+        await update.message.reply_text("You can't add any post. you have riched your limitation!")
     else:
-        update.message.reply_text("You've already validated your code.")
+        await update.message.reply_text(f"""
+Ok!you have {remained} remaind posts, 
+Please share your post url at divar. example : https://divar.ir/v/D23FCeda34?rel=android)
+""", reply_markup = reply_markup_cancel)
+    return LINK
+
+
+async def recieve_posturl(update: Update, context:ContextTypes.DEFAULT_TYPE):
+    url = update.message.text
+    if formatting.is_url(url) == False:
+        await update.message.reply_text("Please send a valid url.", reply_markup = reply_markup_cancel)
+        return LINK
+    global post
+    post = await db.Post()
+    post.chat_id, post.url, post.post_id = int(update.message.chat_id), url, formatting.url_to_postid(url)
+    await update.message.reply_text("Done! now tell the desciption and the tutorial for the ai to respond!", reply_markup = reply_markup_cancel)
+    return DESCRIPTION
+
+async def recieve_description(update: Update, context:ContextTypes.DEFAULT_TYPE):
+    post.description = update.message.text
+    await db.add_post(post)
+    await update.message.reply_text("Done! now you will be announced if someone ask you a Q in divar chat!")
+    return ConversationHandler.END
+
+async def cancel_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Conversation cancelled.")
+    return ConversationHandler.END
+
+
+################## Delete post
+
+async def deletePost(update: Update, context:ContextTypes.DEFAULT_TYPE):
+    user = await db.get_user(int(update.message.chat_id))
+    if user.logged_in == False:
+        await update.message.reply_text("You must login first!")
+        return ConversationHandler.END    
+    await update.message.reply_text("Send the post url.")
+    return LINK_DELETE
+
+
+async def recieve_posturl_delete(update: Update, context:ContextTypes.DEFAULT_TYPE):
+    url = update.message.text
+    if formatting.is_url(url) == False:
+        await update.message.reply_text("Please send a valid url.", reply_markup = reply_markup_cancel)
+        return LINK_DELETE
+    user = await db.get_user(int(update.message.chat_id))
+    post_id = formatting.url_to_postid(url)
+    post = await db.get_post(post_id)
+    if post :
+        await db.delete_post(post) 
+        await update.message.reply_text(f"Done! now you now have {user.posts_charged-user.posts_number + 1} chargs to post.")
+    else:
+        await update.message.reply_text("you have no such post!")
+
+    return ConversationHandler.END
+
+################## Login
+
+
+
+async def login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    chat_id = int(update.message.chat_id)
+    if await db.get_user(chat_id).logged_in == False:
+        await update.message.reply_text("Hi! Please provide your phone number.", reply_markup = reply_markup_cancel)   
+        return PHONE
+
+    else:
+        await update.message.reply_text("You've already validated your code.")
         return ConversationHandler.END
     
-    return PHONE
 
 temp_driver = None
 
-def receive_phone_number(update: Update, context: CallbackContext) -> int:
+async def receive_phone_number(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     chat_id = int(update.message.chat_id)
     phone = formatting.phone_format(update.message.text)
-    update.message.reply_text("Please Wait... we are trying to login to divar.")
-    db.add_user(chat_id, phone)
+    await update.message.reply_text("Please Wait... we are trying to login to divar.", reply_markup = reply_markup_cancel)
+    user = await db.get_user(chat_id)
+    user.phone = phone
+    logger.log("INFO", "await db", f"{chat_id} set the phone number to {phone}.") 
+    await db.update()
     global temp_driver
-    temp_driver = drivers.prepare_firefox_driver(chat_id)
-    print("DONE!")
-    attemp = divar.login_attemp(temp_driver, phone)
+    temp_driver = await drivers.prepare_chrome_driver(chat_id)
+    attemp = await divar.login_attemp(temp_driver, phone)
     if attemp:
-        update.message.edit_text("Done! Please enter the code you received.")
+        await asyncio.sleep(5)
+        await update.message.reply_text("Done! Please enter the code you received.", reply_markup = reply_markup_cancel)
         return CODE
     else:
-        update.message.edit_text("an Error occured, please try again later!")
+        await update.message.reply_text("an Error occured, please try again later with /login!")
         return ConversationHandler.END
 
-def receive_code(update: Update, context: CallbackContext) -> int:
+async def receive_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     chat_id = int(update.message.chat_id)
-    completed_login = divar.login_complete(temp_driver, update.message.text)
+    completed_login = await divar.login_complete(temp_driver, update.message.text)
     if completed_login :  # Replace with your validation logic
-        update.message.reply_text("Code validated! You're all set.")
+        await update.message.reply_text("Code validated! You're all set.")
+        await asyncio.sleep(5)
+        await db.user_logged_in(chat_id)
+        temp_driver.close()
+        return ConversationHandler.END
     else:
-        update.message.reply_text("Invalid code. Please try again.")
-    temp_driver.close()
-    return ConversationHandler.END
+        await update.message.reply_text("Invalid code. Please try again later.")
+        return ConversationHandler.END
 
-def cancel(update: Update, context: CallbackContext) -> int:
-    update.message.reply_text("Conversation cancelled.", reply_markup=ReplyKeyboardRemove())
+async def cancel_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    await update.message.reply_text("Conversation cancelled.")
     if temp_driver:
+        await db.user_logged_out(int(update.message.chat_id))
         temp_driver.close()
     return ConversationHandler.END
 
 
-if __name__ == '__main__':
-    PROXY_URL = "https://210.230.238.153:443"
-    PROXY_USERNAME = "your_proxy_username"
-    PROXY_PASSWORD = "your_proxy_password"
-    request_kwargs = {
-        'proxy_url': PROXY_URL,
-        # 'urllib3_proxy_kwargs': {
-        #     'username': PROXY_USERNAME,
-        #     'password': PROXY_PASSWORD,
-        # }
-    }
-    #,  request_kwargs=request_kwargs
-    updater = Updater(token=TOKEN, use_context=True)
-    dispatcher = updater.dispatcher
-    
-    dispatcher.add_handler(CommandHandler('start' , start))
+################## logout
 
-    conv_handler = ConversationHandler(
+async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int : 
+    user = await db.get_user(int(update.message.chat_id))
+    if user.logged_in == False:
+        await update.message.reply_text("you are already loggedout.")
+        return ConversationHandler.END    
+    await update.message.reply_text("Are you sure? type your phone number if you want to logout.")
+    return SURE
+
+async def logout_sure(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int : 
+    phone = formatting.phone_format(update.message.text)
+    user = await db.get_user(int(update.message.chat_id))
+    if user.phone != phone :
+        await update.message.reply_text("this is not the phone that you have logged in !")
+        return ConversationHandler.END
+    await db.user_logged_out(int(update.message.chat_id))
+    await shutil.rmtree(f'profiles/{user.chat_id}')
+    await update.message.reply_text("you are logged out. and your folder deleted!")
+    return ConversationHandler.END
+
+
+if __name__ == '__main__':
+    
+    #updater = Updater(token=TOKEN, use_context=True)
+    application = ApplicationBuilder().token(TOKEN).build()
+    #dispatcher = updater.application
+    
+    application.add_handler(CommandHandler('start' , start))
+    application.add_handler(CommandHandler('help' , helpp))
+
+
+    login_handler = ConversationHandler(
         entry_points=[CommandHandler('login', login)],
         states={
-            PHONE: [MessageHandler(Filters.text, receive_phone_number)],
-            CODE: [MessageHandler(Filters.text, receive_code)]
+            PHONE: [MessageHandler(filters.TEXT, receive_phone_number)],
+            CODE: [MessageHandler(filters.TEXT, receive_code)]
         },
-        fallbacks=[CommandHandler('cancel', cancel)]
+        fallbacks=[CommandHandler('cancel', cancel_login)]
     )
+
+    post_handler = ConversationHandler(
+        entry_points=[CommandHandler('addpost', addPost)],
+        states={
+            LINK: [MessageHandler(filters.TEXT, recieve_posturl)],
+            DESCRIPTION: [MessageHandler(filters.TEXT, recieve_description)]
+        },
+        fallbacks=[CommandHandler('cancel', cancel_post)]
+    )
+
+    logout_handler = ConversationHandler(
+        entry_points=[CommandHandler('logout', logout)],
+        states={
+            SURE: [MessageHandler(filters.TEXT, logout_sure)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel_post)]
+    )    
+
+    deletepost_handler = ConversationHandler(
+        entry_points=[CommandHandler('deletepost', deletePost)],
+        states={
+            LINK_DELETE: [MessageHandler(filters.TEXT, recieve_posturl_delete)],
+        },
+        fallbacks=[CommandHandler('cancel', cancel_post)]
+    )    
+
+
     
-    dispatcher.add_handler(conv_handler)
-    
-    updater.start_polling()
-    updater.idle()
+    application.add_handler(login_handler)
+    application.add_handler(post_handler)
+    application.add_handler(deletepost_handler)
+    application.add_handler(logout_handler)
+
+    application.run_polling()
+    # updater.start_polling()
+    # updater.idle()
 
 
