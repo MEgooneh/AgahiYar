@@ -6,6 +6,8 @@ RUN pip3 install pytest-playwright pytest-xdist
 
 ENV TZ_SELECTION=1
 
+RUN apt install timedatectl
+
 RUN timedatectl set-timezone Asia/Tehran
 # Install necessary dependencies
 RUN apt-get install -y tzdata
