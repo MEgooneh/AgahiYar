@@ -5,11 +5,12 @@ import formatting, logger, json
 
 TOKEN = os.getenv("TG_KEY")
 headless_condition = True
+
 ######## states:
 
-PHONE, CODE, LINK, SURE, DESCRIPTION, LINK_DELETE, CHARGE_SBT = range(7)
+PHONE, CODE, LINK, SURE, DESCRIPTION, LINK_DELETE, CHARGE_SBT, NOTE_POST = range(8)
 
-
+######### telegram libraries
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
 from telegram.ext import  Updater,filters, CommandHandler, MessageHandler, ConversationHandler, ApplicationBuilder, ContextTypes
 
@@ -21,11 +22,11 @@ reply_markup_cancel = ReplyKeyboardMarkup(
         resize_keyboard=True
     )
 
-########## unrecognized command 
+########## unrecognized commands
+
+
 async def handle_unrecognized(update, context):
     await context.bot.send_message(chat_id=update.effective_chat.id, text="دستور شناسایی نشد!")
-
-
 
 
 ########## /start
@@ -51,8 +52,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
 
 async def helpp(update: Update, context:ContextTypes.DEFAULT_TYPE):
     help_message = """
+🔰 این بات تعهد می‌دهد که از اکانت شما در دیوار سواستفاده نکند
+🔰 این بات از مدل کارآمد GPT3.5 استفاده می‌کند و احتمال توهین و بی احترامی در چت وجود ندارد.
+🔰 این بات هیچ ربط حقوقی به شرکت و اپ دیوار ندارد!
+🔰 سرور هر چندین دقیقه یکبار چت اکانت دیوار شما را چک خواهد کرد.
 
-
+❔درصورت هرگونه ابهام/پیشهاد/انتقاد به اکانت @topgisdead پیام بدهید.
 """
     await update.message.reply_text(help_message)    
     return
@@ -99,10 +104,11 @@ async def detail_post(post):
 async def gen_Q(post):
     prompt = f""" you are a buyer and there is a classified ad with this details :
 
-title : {post.title}
-description : {post.description}
-details : {post.fields}
+title: {post.title}
+description: {post.description}
+details: {post.fields}
 category: {post.category}
+note: {post.note}
 
 ################    
 ask 5 short questions from seller about this ad that is unclear in the details of the post.
@@ -130,6 +136,7 @@ async def addPost(update: Update, context:ContextTypes.DEFAULT_TYPE):
 
 ⚪️ اکنون لینک آگهی مدنظرتان را از قسمت share دیوار کپی کنید و در اینجا وارد کنید:
 
+همچنین بهتر است قبل از ارسال، توضیحات آگهیتان را در دیوار تکمیل و شفاف کنید.
 (بطور مثال : https://divar.ir/v/D23FCeda34?rel=android )
 """)
     return LINK
@@ -161,15 +168,29 @@ async def recieve_posturl(update: Update, context:ContextTypes.DEFAULT_TYPE):
     return DESCRIPTION
 
 async def recieve_description(update: Update, context:ContextTypes.DEFAULT_TYPE):
-    answers = update.message.text.split('/')
-    QA = [(context.user_data['questions'].split('/')[i] , answers[i]) for i in range(len(answers))]
+    #answers = update.message.text.split('/')
+    #QA = [(context.user_data['questions'].split('/')[i] , answers[i]) for i in range(len(answers))]
+    
     post = context.user_data['post']
-    post.questions = json.dumps(QA, ensure_ascii=False)
+    #post.questions = json.dumps(QA, ensure_ascii=False)
+    post.questions = context.user_data['questions'] + update.message.text
+    context.user_data['post'] = post    
+    await update.message.reply_text("""🟢 دریافت شد!
+
+لطفا اکنون نحوه‌ی پرداخت، هماهنگی، شماره تماس و نحوه‌ی ارسال را در متن زیر برای مشتری توضیح دهید:""")
+    return NOTE_POST
+
+async def recieve_note(update: Update, context:ContextTypes.DEFAULT_TYPE):
+    note = update.message.text
+    post = context.user_data['post']
+    post.note = note
     db.add_post(post)
     await update.message.reply_text("""🟢 انجام شد!
 
 اکنون این آگهی توسط سرورها خوانده می‌شود و به مشتریان پاسخ داده خواهد شد!""")
+    context.user_data.clear()
     return ConversationHandler.END
+
 
 async def cancel_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("این گفتگو لغو شد!")
@@ -210,14 +231,13 @@ async def recieve_posturl_delete(update: Update, context:ContextTypes.DEFAULT_TY
 
 ################## Login
 
-user_data = {}
 
 async def login_submit(chat_id , code , phone):
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=headless_condition)
         context = await browser.new_context()
         context.set_default_timeout(120000)
-        page = context.new_page()
+        page = await context.new_page()
         page = await context.new_page()
         await page.goto("https://divar.ir/new")
         await page.get_by_placeholder("شمارهٔ موبایل").fill(phone)
@@ -274,6 +294,7 @@ async def receive_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
     await login_submit(chat_id , code, context.user_data['phone'])
     await update.message.reply_text("🟢 کد شما تایید شد. اکنون می‌توانید با /addpost آگهی اضافه کنید.")
     db.user_logged_in(chat_id)
+    context.user_data.clear()
     return ConversationHandler.END
 
 async def cancel_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -359,7 +380,8 @@ if __name__ == '__main__':
         entry_points=[CommandHandler('addpost', addPost)],
         states={
             LINK: [MessageHandler(filters.TEXT, recieve_posturl)],
-            DESCRIPTION: [MessageHandler(filters.TEXT, recieve_description)]
+            DESCRIPTION: [MessageHandler(filters.TEXT, recieve_description)],
+            NOTE_POST : [MessageHandler(filters.TEXT, recieve_note)]
         },
         fallbacks=[CommandHandler('cancel', cancel_post)]
     )
