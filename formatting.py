@@ -5,7 +5,7 @@ def phone_format(phone):
         '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9'
     }
     for char in persian_to_english : 
-        phone.replace(char , persian_to_english[char])
+        phone = phone.replace(char , persian_to_english[char])
     if len(phone) == 11: 
         return phone[1:]
     if phone[0] == '+' : 
@@ -15,7 +15,7 @@ def phone_format(phone):
     return phone
 
 def is_url(url):
-    url_regex = re.compile(r'^https?://(?:www\.)?[\w\-]+(\.[\w\-]+)+\S*$')
+    url_regex = re.compile(r'^https?://(?:www\.)?divar\.ir/v/.*$')
     return bool(url_regex.match(url))
 
 def url_to_postid(url):
