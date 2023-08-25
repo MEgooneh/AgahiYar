@@ -10,18 +10,19 @@ def submit_camp_serials():
 
 
 if __name__ == "__main__" : 
-    for i in range(40) :
-        code = serial_gen()
-        db.add_serial(code, 1 , 1)
-        print(code)
-    for i in range(30):
-        code = serial_gen()
-        print(code)
-        db.add_serial(code , 5 , 1)
-    for i in range(20):   
-        code = serial_gen()
-        print(code) 
-        db.add_serial(code , 10 , 1)
-    submit_camp_serials()
-    db.add_serial("mofid43", 2 , 30)
-    
+    pass
+    # for i in range(40) :
+    #     code = serial_gen()
+    #     db.add_serial(code, 1 , 1)
+    #     print(code)
+    # for i in range(30):
+    #     code = serial_gen()
+    #     print(code)
+    #     db.add_serial(code , 5 , 1)
+    # for i in range(20):   
+    #     code = serial_gen()
+    #     print(code) 
+    #     db.add_serial(code , 10 , 1)
+    # submit_camp_serials()
+    # db.add_serial("mofid43", 2 , 30)
+

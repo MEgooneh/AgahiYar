@@ -108,7 +108,6 @@ title: {post.title}
 description: {post.description}
 details: {post.fields}
 category: {post.category}
-note: {post.note}
 
 ################    
 ask 5 short questions from seller about this ad that is unclear in the details of the post.
@@ -411,11 +410,11 @@ if __name__ == '__main__':
 
 
     
-    application.add_handler(login_handler)
-    application.add_handler(post_handler)
     application.add_handler(deletepost_handler)
     application.add_handler(charge_handler)
     application.add_handler(logout_handler)
+    application.add_handler(post_handler)
+    application.add_handler(login_handler)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unrecognized))
 
     application.run_polling()

@@ -111,6 +111,9 @@ def get_user(chat_id):
     
     return user
 
+def delete_all_users():
+    for i in session.query(User).all():
+        session.delete(i)
 #################Posts
 
 def add_post(post):
