@@ -10,7 +10,7 @@ def submit_camp_serials():
 
 
 if __name__ == "__main__" : 
-    pass
+    db.add_serial("genx" , 1 , 20)
     # for i in range(40) :
     #     code = serial_gen()
     #     db.add_serial(code, 1 , 1)
