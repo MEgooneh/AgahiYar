@@ -4,6 +4,18 @@ RUN apt-get update && apt-get install -y python3 python3-pip
 
 RUN pip3 install pytest-playwright pytest-xdist
 
+ENV TZ_SELECTION=1
+
+RUN timedatectl set-timezone Asia/Tehran
+# Install necessary dependencies
+RUN apt-get install -y tzdata
+
+# Set the time zone based on the selected option
+RUN ln -fs /usr/share/zoneinfo/Etc/GMT+$TZ_SELECTION /etc/localtime && dpkg-reconfigure --frontend noninteractive tzdata
+
+# Install Playwright with Chromium and its dependencies
+RUN echo $TZ_SELECTION | playwright install --with-deps chromium
+
 RUN playwright install --with-deps chromium 
 
 COPY requirements.txt /
