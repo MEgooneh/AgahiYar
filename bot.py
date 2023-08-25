@@ -4,7 +4,7 @@ from playwright.async_api import async_playwright, expect
 import formatting, logger, json
 
 TOKEN = os.getenv("TG_KEY")
-
+headless_condition = True
 ######## states:
 
 PHONE, CODE, LINK, SURE, DESCRIPTION, LINK_DELETE, CHARGE_SBT = range(7)
@@ -21,6 +21,13 @@ reply_markup_cancel = ReplyKeyboardMarkup(
         resize_keyboard=True
     )
 
+########## unrecognized command 
+async def handle_unrecognized(update, context):
+    await context.bot.send_message(chat_id=update.effective_chat.id, text="دستور شناسایی نشد!")
+
+
+
+
 ########## /start
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -29,15 +36,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     user = db.get_user(chat_id)
     if user:
         await update.message.reply_text(f"""
-Welcome back!
-{"You are logged in!" if user.logged_in else "You didn't logged in yet!"} 
-                                  """)    
+👋 سلامی دوباره.
+{"شما در حال حاضر با {user.phone} وارد شده‌اید!" if user.logged_in else "شما هنوز اکانتی متصل به دیوار ندارید! برای اینکار از دستور /login استفاده کنید."} 
+""")    
     else:
         db.add_user(chat_id)
         await update.message.reply_text(f"""
-Welcome new user!
-you can login with /login .
-                                  """)
+👋 خوش آمدید!
+برای اتصال اکانتتان به دیوار از /login استفاده کنید.
+همچنین برای دیدن راهنما از /help کمک بگیرید.
+""")
 
 ############## /help
 
@@ -53,7 +61,7 @@ async def helpp(update: Update, context:ContextTypes.DEFAULT_TYPE):
 
 async def detail_post(post):
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+        browser = await p.chromium.launch(headless=headless_condition)
         context = await browser.new_context()
         context.set_default_timeout(120000)
         page = await context.new_page()
@@ -108,16 +116,21 @@ async def addPost(update: Update, context:ContextTypes.DEFAULT_TYPE):
     chat_id = int(update.message.chat_id)
     user = db.get_user(chat_id)
     if user.logged_in == False:
-        await update.message.reply_text("You must login first!")
+        await update.message.reply_text("""🔴 شما هنوز ورود نکرده‌اید!
+برای اینکار دستور /login را وارد کنید.""")
         return ConversationHandler.END
     remained = user.posts_charged - user.posts_number
     if remained == 0 : 
-        await update.message.reply_text("You can't add any post. you have riched your limitation!")
+        await update.message.reply_text("""🔴 اعتبار شما به پایان رسیده است!
+برای افزایش اعتبار کدسریال را از @adconnect_admin خریداری کنید. در صورتی که کدسریال دارید با دستور /charge آن را فعال کنید.""")
         return ConversationHandler.END
     else:
         await update.message.reply_text(f"""
-Ok!you have {remained} remaind posts, 
-Please share your post url at divar. example : https://divar.ir/v/D23FCeda34?rel=android)
+🟢 شما {remained} آگهی می‌توانید ثبت کنید.
+
+⚪️ اکنون لینک آگهی مدنظرتان را از قسمت share دیوار کپی کنید و در اینجا وارد کنید:
+
+(بطور مثال : https://divar.ir/v/D23FCeda34?rel=android )
 """)
     return LINK
 
@@ -125,20 +138,26 @@ Please share your post url at divar. example : https://divar.ir/v/D23FCeda34?rel
 async def recieve_posturl(update: Update, context:ContextTypes.DEFAULT_TYPE):
     url = update.message.text
     if formatting.is_url(url) == False:
-        await update.message.reply_text("Please send a valid url.")
+        await update.message.reply_text("🔴 لینک نامعتبر است. دوباره تلاش کنید.")
         return LINK
-    await update.message.reply_text("Ok now wait for a minute to extract the details of the post.")
+    await update.message.reply_text("🟠 لحظاتی منتظر بمانید تا اطلاعات آگهی استخراج شود...")
     post = db.Post()
     post.chat_id, post.url, post.post_id = int(update.message.chat_id), url, formatting.url_to_postid(url)
     await detail_post(post) 
     with open(f'images/{update.message.chat_id}/{post.post_id}.png', 'rb') as photo_file : 
-        await context.bot.send_photo(chat_id=update.message.chat_id,photo=photo_file,caption="This is your post")
+        await context.bot.send_photo(chat_id=update.message.chat_id,photo=photo_file,caption="📊 این نمای آگهی شماست که دریافت کردیم.")
 
     questions = await gen_Q(post)
     context.user_data['questions'] = questions
     context.user_data['post'] = post
 
-    await update.message.reply_text(f"now answer this questions about your post with / seperated : \n{questions}")
+    await update.message.reply_text(f"""⚪️ به سوالات زیر در مورد آگهی خود جواب دهید.
+
+⚠️ توجه داشته باشید که جواب های شما باید با '/' از هم جدا شوند. بطور مثال : قیمت مقطوع است / بله کاملا سالم است / ...
+
+❓سوالات : 
+                                    
+{questions}""")
     return DESCRIPTION
 
 async def recieve_description(update: Update, context:ContextTypes.DEFAULT_TYPE):
@@ -147,11 +166,13 @@ async def recieve_description(update: Update, context:ContextTypes.DEFAULT_TYPE)
     post = context.user_data['post']
     post.questions = json.dumps(QA, ensure_ascii=False)
     db.add_post(post)
-    await update.message.reply_text("Done! now you will be announced if someone ask you a Q in divar chat!")
+    await update.message.reply_text("""🟢 انجام شد!
+
+اکنون این آگهی توسط سرورها خوانده می‌شود و به مشتریان پاسخ داده خواهد شد!""")
     return ConversationHandler.END
 
 async def cancel_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Conversation cancelled.")
+    await update.message.reply_text("این گفتگو لغو شد!")
     return ConversationHandler.END
 
 
@@ -160,16 +181,20 @@ async def cancel_post(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int
 async def deletePost(update: Update, context:ContextTypes.DEFAULT_TYPE):
     user = db.get_user(int(update.message.chat_id))
     if user.logged_in == False:
-        await update.message.reply_text("You must login first!")
+        await update.message.reply_text("""🔴 شما هنوز ورود نکرده‌اید!
+
+برای اینکار دستور /login را وارد کنید.""")
         return ConversationHandler.END    
-    await update.message.reply_text("Send the post url.")
+    await update.message.reply_text("""⚪️ اکنون لینک آگهی مدنظرتان را از قسمت share دیوار کپی کنید و در اینجا وارد کنید:
+
+(بطور مثال : https://divar.ir/v/D23FCeda34?rel=android )""")
     return LINK_DELETE
 
 
 async def recieve_posturl_delete(update: Update, context:ContextTypes.DEFAULT_TYPE):
     url = update.message.text
     if formatting.is_url(url) == False:
-        await update.message.reply_text("Please send a valid url.")
+        await update.message.reply_text("🔴 لینک نامعتبر است. دوباره تلاش کنید.")
         return LINK_DELETE
     user = db.get_user(int(update.message.chat_id))
     post_id = formatting.url_to_postid(url)
@@ -177,7 +202,7 @@ async def recieve_posturl_delete(update: Update, context:ContextTypes.DEFAULT_TY
     if post:
         db.delete_post(post) 
         os.remove(f'images/{post.chat_id}/{post.post_id}.png')
-        await update.message.reply_text(f"Done! now you now have {user.posts_charged-user.posts_number + 1} chargs to post.")
+        await update.message.reply_text(f"🟢 شما اکنون می‌توانید {user.posts_charged-user.posts_number} آگهی ثبت کنید.")
     else:
         await update.message.reply_text("you have no such post!")
 
@@ -189,7 +214,7 @@ user_data = {}
 
 async def login_submit(chat_id , code , phone):
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+        browser = await p.chromium.launch(headless=headless_condition)
         context = await browser.new_context()
         context.set_default_timeout(120000)
         page = context.new_page()
@@ -209,7 +234,7 @@ async def login_submit(chat_id , code , phone):
 
 async def login_attemp(chat_id, phone):
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=False)
+        browser = await p.chromium.launch(headless=headless_condition)
         context = await browser.new_context()
         context.set_default_timeout(120000)
         page = await context.new_page()
@@ -220,11 +245,11 @@ async def login_attemp(chat_id, phone):
 async def login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     chat_id = int(update.message.chat_id)
     if db.get_user(chat_id).logged_in == False:
-        await update.message.reply_text("Hi! Please provide your phone number.")   
+        await update.message.reply_text("لطفا شماره تلفنی که با آن در دیوار آگهی منتشر کرده‌اید را وارد کنید:")   
         return PHONE
 
     else:
-        await update.message.reply_text("You've already validated your code.")
+        await update.message.reply_text("🟠 شما قبلا به اکانت دیوار متصل شدید. درصورتی که میخواهید شماره ی جدیدی وارد شوید ابتدا با دستور /logout خارج شوید و سپس از همین دستور برای ورود مجدد استفاده کنید.")
         return ConversationHandler.END
     
 attemp = None 
@@ -233,25 +258,26 @@ async def receive_phone_number(update: Update, context: ContextTypes.DEFAULT_TYP
     chat_id = int(update.message.chat_id)
     phone = formatting.phone_format(update.message.text)
     context.user_data['phone'] = phone
-    await update.message.reply_text("Please Wait... we are trying to login to divar.")
+    await update.message.reply_text("🟠 لحظاتی منتظر بمانید تا ما به اکانت شما وارد شویم...")
     user = db.get_user(chat_id)
     user.phone = phone
     logger.log("INFO", "db", f"{chat_id} set the phone number to {phone}.") 
     db.update()
     await login_attemp(chat_id , phone)
-    await update.message.reply_text("Enter the code:")
+    await update.message.reply_text("کدی که به شماره‌ی شما پیامک شده را وارد کنید:")
     return CODE
 
 
 async def receive_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     chat_id = int(update.message.chat_id)
-    await login_submit(chat_id , update.message.text, context.user_data['phone'])
-    await update.message.reply_text("Code validated! You're all set.")
+    code = formatting.english_number(update.message.text)
+    await login_submit(chat_id , code, context.user_data['phone'])
+    await update.message.reply_text("🟢 کد شما تایید شد. اکنون می‌توانید با /addpost آگهی اضافه کنید.")
     db.user_logged_in(chat_id)
     return ConversationHandler.END
 
 async def cancel_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    await update.message.reply_text("Conversation cancelled.")
+    await update.message.reply_text("این گفتگو لغو شد!")
     return ConversationHandler.END
 
 
@@ -260,27 +286,32 @@ async def cancel_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
 async def logout(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int : 
     user = db.get_user(int(update.message.chat_id))
     if user.logged_in == False:
-        await update.message.reply_text("you are already loggedout.")
+        await update.message.reply_text("🔴 شما هنوز ورود نکرده‌اید!")
         return ConversationHandler.END    
-    await update.message.reply_text("Are you sure? type your phone number if you want to logout.")
+    await update.message.reply_text("""⚠️ مطمعنید که می‌خواهید از این اکانت خارج شوید؟
+برای اینکار لطفا شماره تماسی که با آن وارد شدید را مجددا وارد کنید:""")
     return SURE
 
 async def logout_sure(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int : 
     phone = formatting.phone_format(update.message.text)
     user = db.get_user(int(update.message.chat_id))
     if user.phone != phone :
-        await update.message.reply_text("this is not the phone that you have logged in !")
+        await update.message.reply_text("🔴 این شماره‌ای نیست که با آن وارد شده‌اید!")
         return ConversationHandler.END
     db.user_logged_out(int(update.message.chat_id))
     await os.remove(f'.auth/{user.chat_id}.json')
-    await update.message.reply_text("you are logged out. and your folder deleted!")
+    await update.message.reply_text("⚪️ شما با موفقیت خارج شدید! اطلاعات ورود شما هم از سرور پاک شد.")
     return ConversationHandler.END
 
 ########################## charge
 
 async def chargeStart(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int : 
-    user = db.get_user(int(update.message.chat_id))    
-    await update.message.reply_text("please send the serial number you have:")
+    user = db.get_user(int(update.message.chat_id))   
+    remained = user.posts_charged - user.posts_number 
+    await update.message.reply_text(f"""⚪️ شما هم‌اکنون {remained} اعتبار دارید!
+
+لطفا کد سریال خود را برای افزایش اعتبار وارد کنید:
+(در صورتی که کدسریال ندارید باید از @adconnect_admin تهیه کنید!)""")
     return CHARGE_SBT
 
 async def recieve_serial(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int : 
@@ -288,18 +319,22 @@ async def recieve_serial(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     user = db.get_user(int(update.message.chat_id))
     verified_serial = db.get_serial(serial)
     if verified_serial == None or verified_serial.remained == 0 :
-        await update.message.reply_text("Wrong serial or you can't use it anymore!")
+        await update.message.reply_text("🔴 کد سریال نامعتبر است!")
         return ConversationHandler.END
 
     if str(user.chat_id) in verified_serial.users : 
-        await update.message.reply_text("You have used this code before!")
+        await update.message.reply_text("🟠 شما قبلا از این کد استفاده کرده‌اید!")
         return ConversationHandler.END
 
     user.posts_charged += verified_serial.charge
     verified_serial.remained -= 1
     verified_serial.users += ('-' + str(user.chat_id))
     db.update()
-    await update.message.reply_text(f"Your charge increased {verified_serial.charge}. now you have {user.posts_charged} !")
+    await update.message.reply_text(f"""🎁 اعتبار شما افزایش یافت!
+
+{verified_serial.charge} به اعتبار شما اضافه شد!
+
+شما اکنون {user.posts_charged} اعتبار دارید!""")
     return ConversationHandler.END
 
 
@@ -359,6 +394,7 @@ if __name__ == '__main__':
     application.add_handler(deletepost_handler)
     application.add_handler(charge_handler)
     application.add_handler(logout_handler)
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_unrecognized))
 
     application.run_polling()
 
