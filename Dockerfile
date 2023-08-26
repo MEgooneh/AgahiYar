@@ -23,6 +23,8 @@ ENV OPENAI_API_KEY="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"
 
 RUN chmod a+x start.sh
 
+RUN mkdir .auth
+
 CMD ["./start.sh"]
 
 
