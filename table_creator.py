@@ -21,6 +21,7 @@ class User(Base):
     posts_charged = Column(Integer)
     logged_in = Column(Boolean)
 class Post(Base):
+    
     __tablename__ = 'posts'
     post_id = Column(String, primary_key=True) # Needed
     url = Column(String, primary_key=True)
